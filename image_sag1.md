@@ -12,18 +12,12 @@
 
 ----
 
-图像语义分割从深度学习引入这个任务（FCN）到现在而言，一个通用的框架已经大概确定了。即：
-![](Pictures/2.png) 
 
- -  FCN-全卷积网络
- - CRF-条件随机场
- - MRF-马尔科夫随机场
- 
 
 为什么需要FCN？
 我们分类使用的网络通常会在最后连接几层全连接层，它会将原来二维的矩阵（图片）压扁成一维的，从而丢失了空间信息，最后训练输出一个标量，这就是我们的分类标签。
 而图像语义分割的输出需要是个分割图，且不论尺寸大小，但是至少是二维的。所以，我们需要丢弃全连接层，换上全卷积层，而这就是全卷积网络了。
-
+FCN不需要对图片进行resize。
 
 ## FCN
 
@@ -66,7 +60,7 @@
 
 那么当反向传播时又会如何呢？首先我们已经有从更深层的网络中得到的
 ![示例](http://latex.codecogs.com/gif.latex?\small&space;\frac{\partial&space;Loss}{\partial&space;y})。根据矩阵微分公式![](http://latex.codecogs.com/gif.latex?\small&space;\frac{\partial&space;Ax&space;&plus;b}{\partial&space;x}=A^T)可推得
-![](http://latex.codecogs.com/gif.latex?\small&space;\frac{\partial&space;Loss}{\partial&space;x}&space;=&space;\frac{\partial&space;Loss}{\partial&space;y}&space;\cdot&space;\frac{\partial&space;y}{\partial&space;x}&space;=C^T\frac{\partial&space;Loss}{\partial&space;y})
+![](Pictures/l1.gif)
 Caffe中的卷积操作简单来说就是这样，那转置卷积呢？
 其实转置卷积相对于卷积在神经网络结构的正向和反向传播中做相反的运算。
 所以所谓的转置卷积其实就是正向时左乘C^T，而反向时左乘(C^T)^T，即C的运算。
@@ -142,38 +136,10 @@ with tf.name_scope('loss'):
 
 上一节讲到FCN适用于需要像素级预测的场景, 下面就介绍一个基于FCN的边缘检测的工作HED, 来自于屠卓文老师组, 发表在ICCV2015并且获得了Marr奖提名。
 HED提出了side-output的概念, 在网络的中间的卷积层也对其输出上采样得到一个与原图一样的map, 并与ground-truth计算loss, 这些中间的卷积层输出的map称为side-output。 多个side-output产生的loss直接反向传导到对应的卷积层, 一定程度避免了梯度消失, 同时也在不同的卷积层(不同的感受野)学到了不同尺度的feature, 在edge-detection这个计算机视觉中古老的问题上取得了state-of-art的效果。
+----
 ![](Pictures/12.png) 
+----
 上图所示为HED的网络结构, 多个side-output产生的loss直接反向传到对应的卷积层。
 
 
 
-### SegNet/DeconvNet
-这样的结构总结在这儿，只是我觉得结构上比较优雅，它得到的结果不一定比上一种好。
-######SegNet
-![](Pictures/7.png)
- 
-######DeconvNet
-![](/home/zack/Pictures/8.jpg)
-
-反卷积如。而上池化的实现主要在于池化时记住输出值的位置，在上池化时再将这个值填回原来的位置，其他位置填0即OK。
-![](/home/zack/Pictures/9_1.jpg) 
-![](/home/zack/Pictures/10.jpg) 
-
-######DeepLab
-接下来介绍一个很成熟优雅的结构，以至于现在的很多改进是基于这个网络结构的进行的。
-首先这里我们将指出一个第一个结构FCN的粗糙之处：为了保证之后输出的尺寸不至于太小，FCN的作者在第一层直接对原图加了100的padding，可想而知，这会引入噪声。
-而怎样才能保证输出的尺寸不会太小而又不会产生加100 padding这样的做法呢？可能有人会说减少池化层不就行了，这样理论上是可以的，但是这样直接就改变了原先可用的结构了，而且最重要的一点是就不能用以前的结构参数进行fine-tune了。所以，Deeplab这里使用了一个非常优雅的做法：将pooling的stride改为1，再加上 1 padding。这样池化后的图片尺寸并未减小，并且依然保留了池化整合特征的特性。
-但是，事情还没完。因为池化层变了，后面的卷积的感受野也对应的改变了，这样也不能进行fine-tune了。所以，Deeplab提出了一种新的卷积，带孔的卷积：Atrous Convolution.即：
-
-
-
-#####1， ScribbleSup: Scribble-Supervised Convolutional Networks for Semantic Segmentation (CVPR 2016)
-
-香港中文大学的Di Lin提出了一个基于Scribble标记的弱监督学习方法。 Scribble是一个很方便使用的标记方法，因此被用得比较广泛。如下图，只需要画五条线就能完成对一副图像的标记工作。
-
-
-Graph cut 的能量函数为：
-\sum_i\psi_i(y_i|X,S)+\sum_{i,j}\psi_{ij}(y_i,y_j,X)
-在这个graph中，每个super-pixel是graph中的一个节点，相接壤的super-pixel之间有一条连接的边。这个能量函数中的一元项包括两种情况，一个是来自于scribble的，一个是来自CNN对该super-pixel预测的概率。整个最优化过程实际上是求graph cut能量函数和CNN参数联合最优值的过程：
-\sum_i\psi_i^{scr}(y_i|X,S)+\sum_i-logP(y_i|X,\Theta)+\sum_{i,j}\psi_{ij}(y_i,y_j|X)
-上式的最优化是通过交替求Y和\Theta的最优值来实现的。文章中发现通过三次迭代就能得到比较好的结果。
